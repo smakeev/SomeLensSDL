@@ -82,13 +82,14 @@ void LensContainer::end_content()
     SDL_SetRenderTarget(renderer_, nullptr);
     SDL_RenderTexture(renderer_, content_, nullptr, nullptr);
 
-    const Uint64 now = SDL_GetTicksNS();
-    bool due = requested_ || !has_snapshot_;
-    if (const std::optional<double> interval = rate_.interval(); interval.has_value() && !due) {
-        // Never closer than one and a half times what the last capture took, as the reference does.
-        const double effective = std::max(*interval, static_cast<double>(last_duration_ns_) * 1.5 / 1e9);
-        due = static_cast<double>(now - last_finished_ns_) / 1e9 >= effective;
-    }
+    // A snapshot is due at the rate, or when asked for (rate changed, resumed); either way never closer to the last
+    // one than the rate's interval or one and a half times what the last capture took. With kNever only asked ones.
+    const std::optional<double> interval = rate_.interval();
+    const double effective =
+        std::max(interval.value_or(0.0), static_cast<double>(last_duration_ns_) * 1.5 / 1e9);
+    const double elapsed = static_cast<double>(SDL_GetTicksNS() - last_finished_ns_) / 1e9;
+    const bool wanted = requested_ || interval.has_value();
+    const bool due = !has_snapshot_ || (wanted && elapsed >= effective);
     if (due && !paused_) {
         take_snapshot();
     }

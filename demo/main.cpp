@@ -37,6 +37,69 @@ SDL_FPoint ratio_of(const SDL_FRect& bounds, SDL_FPoint centre)
     return SDL_FPoint{(x - bounds.x) / bounds.w, (y - bounds.y) / bounds.h};
 }
 
+const char* rate_title(const somelens::SnapshotRefreshRate& rate, char* buffer, std::size_t size)
+{
+    using Kind = somelens::SnapshotRefreshRate::Kind;
+    switch (rate.kind) {
+    case Kind::kNever:
+        return "Never";
+    case Kind::kAutomatic:
+        return "Automatic";
+    case Kind::kFast:
+        return "Fast";
+    case Kind::kBalanced:
+        return "Balanced";
+    case Kind::kRelaxed:
+        return "Relaxed";
+    case Kind::kSlow:
+        return "Slow";
+    case Kind::kCustom:
+        std::snprintf(buffer, size, "%d ms", rate.milliseconds);
+        return buffer;
+    }
+    return "";
+}
+
+/* Until the controls row exists: keys 0-6 pick the rate (Never, Automatic, Fast, Balanced, Relaxed, Slow, custom),
+ * Up and Down change the custom milliseconds by 10, P switches Pause move. */
+bool handle_key(SDL_Keycode key, somelens::SnapshotRefreshRate& rate, int& custom_ms, bool& pause_move)
+{
+    using Kind = somelens::SnapshotRefreshRate::Kind;
+    switch (key) {
+    case SDLK_0:
+        rate = {Kind::kNever, custom_ms};
+        return true;
+    case SDLK_1:
+        rate = {Kind::kAutomatic, custom_ms};
+        return true;
+    case SDLK_2:
+        rate = {Kind::kFast, custom_ms};
+        return true;
+    case SDLK_3:
+        rate = {Kind::kBalanced, custom_ms};
+        return true;
+    case SDLK_4:
+        rate = {Kind::kRelaxed, custom_ms};
+        return true;
+    case SDLK_5:
+        rate = {Kind::kSlow, custom_ms};
+        return true;
+    case SDLK_6:
+        rate = {Kind::kCustom, custom_ms};
+        return true;
+    case SDLK_UP:
+    case SDLK_DOWN:
+        custom_ms = std::clamp(custom_ms + (key == SDLK_UP ? 10 : -10), 10, 5000);
+        rate = {Kind::kCustom, custom_ms};
+        return true;
+    case SDLK_P:
+        pause_move = !pause_move;
+        return true;
+    default:
+        return false;
+    }
+}
+
 } // namespace
 
 /* The demo: the page under a draggable glass lens. The window title shows the frame time. */
@@ -69,6 +132,9 @@ int main(int /*argc*/, char** /*argv*/)
     const somelens::LensSettings lens_settings = somelens::LensSettings::circle(160.0f);
     SDL_FPoint lens_ratio{0.5f, 0.5f};
     bool dragging = false;
+    somelens::SnapshotRefreshRate rate{};
+    int custom_ms = 200;
+    bool pause_move = false;
     SDL_FPoint grab{0.0f, 0.0f};  // the pointer's offset from the lens centre while dragging
     double frame_ms = 0.0;
     Uint64 last = SDL_GetTicksNS();
@@ -87,6 +153,10 @@ int main(int /*argc*/, char** /*argv*/)
             if (event.type == SDL_EVENT_QUIT
                 || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)) {
                 running = false;
+            } else if (event.type == SDL_EVENT_KEY_DOWN) {
+                if (handle_key(event.key.key, rate, custom_ms, pause_move)) {
+                    title_at = 0;
+                }
             } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
                 const SDL_FPoint at{event.button.x, event.button.y};
                 if (container.snapshot() != nullptr && lens.contains(lens_centre, lens_settings, at)) {
@@ -105,6 +175,8 @@ int main(int /*argc*/, char** /*argv*/)
         // The page into the container (it shows it and snapshots it at its rate), then the lens over it.
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
+        container.set_refresh_rate(rate);
+        container.set_paused(dragging && pause_move);
         container.begin_content();
         background.draw(static_cast<float>(window_w), static_cast<float>(window_h));
         container.end_content();
@@ -123,8 +195,10 @@ int main(int /*argc*/, char** /*argv*/)
         frame_ms = frame_ms * 0.95 + static_cast<double>(now - last) / 1e6 * 0.05;
         last = now;
         if (now - title_at > 500'000'000) {
-            char title[96];
-            std::snprintf(title, sizeof title, "SomeLens SDL - %.1f ms a frame", frame_ms);
+            char custom[32];
+            char title[160];
+            std::snprintf(title, sizeof title, "SomeLens SDL - %s - Pause move %s - %.1f ms a frame",
+                          rate_title(rate, custom, sizeof custom), pause_move ? "on" : "off", frame_ms);
             SDL_SetWindowTitle(window, title);
             title_at = now;
         }
