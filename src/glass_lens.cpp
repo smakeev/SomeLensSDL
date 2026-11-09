@@ -1,13 +1,11 @@
 #include "somelens/glass_lens.hpp"
 
 #include "lens_morph.hpp"
-
-#include "generated/refraction.msl.h"
-#include "generated/refraction.spv.h"
+#include "lens_shaders.hpp"
 
 #include <algorithm>
 #include <cmath>
-#include <type_traits>
+#include <cstdint>
 
 namespace somelens {
 namespace {
@@ -16,11 +14,6 @@ namespace {
 constexpr SDL_Color kUncovered{255, 149, 0, 77};
 /* The snapshot is cropped 1.5 points lower than the lens, as the reference does. */
 constexpr float kVerticalCorrection = 1.5f;
-
-struct RefractionUniforms {
-    float size_center[4];
-    float params[4];
-};
 
 /** @brief The outline's outward normal at each point, scaled so an offset keeps its width at corners. */
 std::vector<SDL_FPoint> outward_normals(const std::vector<SDL_FPoint>& points)
@@ -235,6 +228,7 @@ struct GlassLens::Resources {
     int width = 0;
     int height = 0;
     std::vector<ShaderProgram> programs;
+    std::vector<std::size_t> program_kinds;  // the shader kind each program was built for
     LensMorph morph;
 
     ~Resources() { release_textures(); }
@@ -256,6 +250,7 @@ struct GlassLens::Resources {
         if (renderer != to) {
             release_textures();
             programs.clear();
+            program_kinds.clear();
             renderer = to;
         }
         if (ping != nullptr && w == width && h == height) {
@@ -275,12 +270,17 @@ struct GlassLens::Resources {
     }
 
     /** @brief The render state for step `index` of the chain: one per step, so each keeps its own uniforms. */
-    ShaderProgram* program(std::size_t index, const ShaderBinary& binary)
+    ShaderProgram* program(std::size_t index, std::size_t kind, const ShaderBinary& binary)
     {
         if (programs.size() <= index) {
             programs.resize(index + 1);
+            program_kinds.resize(index + 1, SIZE_MAX);
         }
         ShaderProgram& program = programs[index];
+        if (program_kinds[index] != kind) {
+            program.destroy();
+            program_kinds[index] = kind;
+        }
         if (program.state() == nullptr && !program.create(renderer, binary)) {
             SDL_Log("somelens: shader failed: %s", SDL_GetError());
             return nullptr;
@@ -321,11 +321,21 @@ void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSe
     const float scale = container.pixel_scale();
     const float lens_w = std::max(settings.width, 1.0f);
     const float lens_h = std::max(settings.height, 1.0f);
-    const int tex_w = std::max(1, static_cast<int>(std::lround(lens_w * scale)));
-    const int tex_h = std::max(1, static_cast<int>(std::lround(lens_h * scale)));
+    const float radius = std::hypot(lens_w, lens_h) / 2.0f;
+    // The crop takes a margin of the content around the lens, as far as the chain's shaders sample past the lens
+    // (the reference's maxSampleOffset), so a shifted sample near the edge reads the content, not emptiness.
+    float margin_points = 0.0f;
+    for (const LensShader& shader : settings.shaders) {
+        margin_points = std::max(margin_points, shader_sample_offset(shader, radius));
+    }
+    const int margin = static_cast<int>(std::ceil(margin_points * scale));
+    const int tex_w = std::max(1, static_cast<int>(std::lround(lens_w * scale))) + 2 * margin;
+    const int tex_h = std::max(1, static_cast<int>(std::lround(lens_h * scale))) + 2 * margin;
     // The lens sits on whole pixels, so the crop is the snapshot one to one.
     const float origin_x = std::round((centre.x - lens_w / 2.0f) * scale);
     const float origin_y = std::round((centre.y - lens_h / 2.0f) * scale);
+    const float crop_x = origin_x - static_cast<float>(margin);
+    const float crop_y = origin_y - static_cast<float>(margin);
     if (!r_->ensure_textures(renderer, tex_w, tex_h)) {
         return;
     }
@@ -339,34 +349,21 @@ void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSe
     float snap_w = 0.0f;
     float snap_h = 0.0f;
     SDL_GetTextureSize(snapshot, &snap_w, &snap_h);
-    const SDL_FRect shifted{-origin_x, -(origin_y + kVerticalCorrection * scale), snap_w, snap_h};
+    const SDL_FRect shifted{-crop_x, -(crop_y + kVerticalCorrection * scale), snap_w, snap_h};
     SDL_SetTextureBlendMode(snapshot, SDL_BLENDMODE_NONE);
     SDL_RenderTexture(renderer, snapshot, nullptr, &shifted);
 
-    // 2. The shader chain: each step reads what the one before wrote.
-    const auto size_x = static_cast<float>(tex_w);
-    const auto size_y = static_cast<float>(tex_h);
-    const float radius = std::hypot(lens_w, lens_h) / 2.0f * scale;
+    // 2. The shader chain: each step reads what the one before wrote. Its values are in points, as the reference's.
+    const float margin_pt = static_cast<float>(margin) / scale;
+    const SDL_FPoint frame{static_cast<float>(tex_w) / scale, static_cast<float>(tex_h) / scale};
     for (std::size_t i = 0; i < settings.shaders.size(); ++i) {
-        ShaderProgram* program = nullptr;
-        std::visit(
-            [&](const auto& shader) {
-                using Shader = std::decay_t<decltype(shader)>;
-                if constexpr (std::is_same_v<Shader, RefractionShader>) {
-                    program = r_->program(i, ShaderBinary{refraction_spv, sizeof refraction_spv, refraction_msl,
-                                                          sizeof refraction_msl, 1});
-                    if (program != nullptr) {
-                        const RefractionUniforms uniforms{
-                            {size_x, size_y, size_x / 2.0f, size_y / 2.0f},
-                            {radius, shader.refraction, shader.edge_reflection, 0.0f}};
-                        program->set_uniforms(&uniforms, sizeof uniforms);
-                    }
-                }
-            },
-            settings.shaders[i]);
+        const LensShader& shader = settings.shaders[i];
+        ShaderProgram* program = r_->program(i, shader.index(), shader_binary(shader));
         if (program == nullptr) {
             continue;
         }
+        const ShaderUniforms uniforms = shader_uniforms(shader, lens_w, lens_h, radius, margin_pt, frame);
+        program->set_uniforms(&uniforms, sizeof uniforms);
         SDL_SetRenderTarget(renderer, r_->pong);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
         SDL_RenderClear(renderer);
@@ -387,7 +384,7 @@ void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSe
         p = SDL_FPoint{p.x * scale, p.y * scale};
     }
     const std::vector<SDL_FPoint> normals = outward_normals(outline);
-    const SDL_FRect uv_rect{origin_x, origin_y, size_x, size_y};
+    const SDL_FRect uv_rect{crop_x, crop_y, static_cast<float>(tex_w), static_cast<float>(tex_h)};
     Mesh mesh(outline, normals);
     mesh.fill(0.5f, uv_rect);
     mesh.band(-0.5f, 0.5f, 1.0f, 0.0f, &uv_rect);

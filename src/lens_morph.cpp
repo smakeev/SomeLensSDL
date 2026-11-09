@@ -1,8 +1,9 @@
 #include "lens_morph.hpp"
 
+#include "lens_shaders.hpp"
+
 #include <algorithm>
 #include <cmath>
-#include <type_traits>
 
 namespace somelens {
 namespace {
@@ -63,37 +64,6 @@ std::vector<SDL_FPoint> unit_outline(const LensSettings& settings)
     return settings.path ? settings.path(SDL_FRect{0.0f, 0.0f, 1.0f, 1.0f}) : std::vector<SDL_FPoint>{};
 }
 
-/** @brief The shader's values, in order, for the signature and for blending. */
-std::vector<float> values_of(const LensShader& shader)
-{
-    return std::visit(
-        [](const auto& s) -> std::vector<float> {
-            using Shader = std::decay_t<decltype(s)>;
-            if constexpr (std::is_same_v<Shader, RefractionShader>) {
-                return {s.refraction, s.edge_reflection};
-            }
-        },
-        shader);
-}
-
-/** @brief The shader `to` with its values moved from `from`'s by `t`; `to` as it is when they are not the same kind. */
-LensShader blended(const LensShader& from, const LensShader& to, float t)
-{
-    if (from.index() != to.index()) {
-        return to;
-    }
-    return std::visit(
-        [&](const auto& end) -> LensShader {
-            using Shader = std::decay_t<decltype(end)>;
-            const auto& start = std::get<Shader>(from);
-            if constexpr (std::is_same_v<Shader, RefractionShader>) {
-                return RefractionShader{lerp(start.refraction, end.refraction, t),
-                                        lerp(start.edge_reflection, end.edge_reflection, t)};
-            }
-        },
-        to);
-}
-
 /** @brief The spring's value at `seconds`: 0 at the start, settling at 1, overshooting a little. */
 double spring(double seconds)
 {
@@ -126,8 +96,7 @@ LensMorph::Signature LensMorph::signature_of(const LensSettings& settings)
     signature.ring_width = quantized(settings.ring_width);
     signature.animates = settings.animates_path_changes;
     for (const LensShader& shader : settings.shaders) {
-        signature.shaders.push_back(static_cast<int>(shader.index()));
-        for (const float value : values_of(shader)) {
+        for (const float value : shader_signature(shader)) {
             signature.shaders.push_back(quantized(value));
         }
     }

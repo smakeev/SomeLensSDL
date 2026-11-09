@@ -50,13 +50,114 @@ private:
 /** @brief The rectangle with circular corners, their radius `fraction` of its shorter side. */
 [[nodiscard]] LensPath rounded_rectangle_path(float fraction);
 
+/* The lens's shaders. Lengths (amount, radius, amplitude) are in points; `radius`-like fractions are of the shader
+ * radius, half the lens's diagonal. */
+
+/** @brief Magnifies the middle, bends the content towards the rim and mirrors a narrow edge. */
 struct RefractionShader {
     float refraction = 1.2f;
     float edge_reflection = 0.8f;
 };
 
+/** @brief Pulls red and blue apart along the radius, at the edge only or everywhere. */
+struct ChromaticAberrationShader {
+    float amount = 12.0f;
+    float falloff = 1.8f;
+    bool edge_only = true;
+};
+
+/** @brief A frosted blur, wider towards the rim by `edge_bias`. */
+struct FrostedBlurShader {
+    float radius = 8.0f;
+    float intensity = 0.72f;
+    float edge_bias = 0.35f;
+};
+
+/** @brief Enlarges the middle by `scale`, easing back to 1 at the rim. */
+struct MagnificationShader {
+    float scale = 1.55f;
+    float falloff = 1.25f;
+    float center_radius = 0.42f;
+};
+
+/** @brief Concentric waves pushing the content along the radius. */
+struct RippleShader {
+    float amplitude = 9.0f;
+    float frequency = 9.0f;
+    float phase = 0.0f;
+    float falloff = 1.1f;
+};
+
+/** @brief Turns the content around the centre by up to `angle` radians, most in the middle. */
+struct TwirlShader {
+    float angle = 2.2f;
+    float falloff = 1.15f;
+    float center_radius = 0.18f;
+};
+
+/** @brief Warm streaks of focused light. */
+struct CausticsShader {
+    float intensity = 0.32f;
+    float scale = 8.0f;
+    float falloff = 1.25f;
+};
+
+/** @brief Darkens towards the rim, with a little contrast. */
+struct VignetteShader {
+    float intensity = 0.55f;
+    float radius = 0.38f;
+    float softness = 0.42f;
+};
+
+/** @brief A warm to cool glow at the visible edge. */
+struct RimGlowShader {
+    float intensity = 0.72f;
+    float width = 0.16f;
+    float softness = 0.2f;
+};
+
+/** @brief Small star glints scattered near the rim. */
+struct SparkleShader {
+    float intensity = 0.42f;
+    float scale = 34.0f;
+    float threshold = 0.78f;
+};
+
+/** @brief Splits the colours along facet directions. */
+struct PrismShader {
+    float amount = 10.0f;
+    float facets = 8.0f;
+    float falloff = 1.1f;
+};
+
+/** @brief Tints the content towards a glass colour. */
+struct ColorGlassShader {
+    float red = 0.45f;
+    float green = 0.78f;
+    float blue = 1.0f;
+    float alpha = 0.28f;
+};
+
+/** @brief A grain of the given colour, one cell a point. */
+struct NoiseShader {
+    float red = 1.0f;
+    float green = 1.0f;
+    float blue = 1.0f;
+    float alpha = 0.22f;
+    float density = 0.36f;
+};
+
+/** @brief Rainbow bands of a thin film. */
+struct SoapBubbleShader {
+    float intensity = 0.55f;
+    float scale = 9.0f;
+    float phase = 0.0f;
+};
+
 /** @brief One step of a lens's shader chain; each samples what the one before produced. */
-using LensShader = std::variant<RefractionShader>;
+using LensShader = std::variant<RefractionShader, ChromaticAberrationShader, FrostedBlurShader, MagnificationShader,
+                                RippleShader, TwirlShader, CausticsShader, VignetteShader, RimGlowShader, SparkleShader,
+                                PrismShader, ColorGlassShader, NoiseShader, SoapBubbleShader>;
 
 struct LensSettings {
     float width = 160.0f;

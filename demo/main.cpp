@@ -1,4 +1,5 @@
 #include "demo_background.hpp"
+#include "help_panel.hpp"
 
 #include "somelens/glass_lens.hpp"
 #include "somelens/lens_container.hpp"
@@ -11,6 +12,8 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -68,6 +71,88 @@ std::array<PathOption, 8> path_options()
     };
 }
 
+struct ShaderOption {
+    const char* title;
+    SDL_Keycode key;
+    somelens::LensShader shader;
+};
+
+/* The reference demo's shaders, with its values. Until the controls row exists each is switched by a key: the chain
+ * runs in the order they were switched on. */
+std::array<ShaderOption, 14> shader_options()
+{
+    return {
+        ShaderOption{"Refraction", SDLK_Q, somelens::RefractionShader{}},
+        ShaderOption{"Chromatic", SDLK_W, somelens::ChromaticAberrationShader{16.0f, 1.8f, true}},
+        ShaderOption{"Frosted", SDLK_E, somelens::FrostedBlurShader{10.0f, 0.82f, 0.2f}},
+        ShaderOption{"Magnify", SDLK_R, somelens::MagnificationShader{1.85f, 1.35f, 0.45f}},
+        ShaderOption{"Ripple", SDLK_T, somelens::RippleShader{12.0f, 11.0f, 0.6f, 0.85f}},
+        ShaderOption{"Twirl", SDLK_Y, somelens::TwirlShader{2.8f, 1.0f, 0.16f}},
+        ShaderOption{"Caustics", SDLK_U, somelens::CausticsShader{0.48f, 10.0f, 0.9f}},
+        ShaderOption{"Vignette", SDLK_I, somelens::VignetteShader{0.78f, 0.32f, 0.42f}},
+        ShaderOption{"Rim Glow", SDLK_O, somelens::RimGlowShader{0.95f, 0.22f, 0.18f}},
+        ShaderOption{"Sparkle", SDLK_Z, somelens::SparkleShader{0.72f, 28.0f, 0.68f}},
+        ShaderOption{"Prism", SDLK_X, somelens::PrismShader{14.0f, 7.0f, 0.9f}},
+        ShaderOption{"Color Glass", SDLK_C, somelens::ColorGlassShader{0.35f, 0.72f, 1.0f, 0.42f}},
+        ShaderOption{"Noise", SDLK_V, somelens::NoiseShader{0.9f, 0.96f, 1.0f, 0.34f, 0.42f}},
+        ShaderOption{"Soap", SDLK_B, somelens::SoapBubbleShader{0.72f, 7.0f, 0.4f}},
+    };
+}
+
+/* The left list: refresh rates, outlines and switches, each marked when on. */
+std::vector<demo::HelpPanel::Line> settings_lines(const somelens::SnapshotRefreshRate& rate, int custom_ms,
+                                                  const std::array<PathOption, 8>& paths, std::size_t path_index,
+                                                  bool animate, bool pause_move)
+{
+    using Kind = demo::HelpPanel::Kind;
+    using Rate = somelens::SnapshotRefreshRate::Kind;
+    auto mark = [](bool on) { return std::string(on ? "[x]  " : "[  ]  "); };
+    std::vector<demo::HelpPanel::Line> lines{{"Refresh rate", Kind::kHeader}};
+    const std::array<std::pair<Rate, const char*>, 6> rates{{{Rate::kNever, "0   Never"},
+                                                            {Rate::kAutomatic, "1   Automatic (0.2 s)"},
+                                                            {Rate::kFast, "2   Fast (1/30 s)"},
+                                                            {Rate::kBalanced, "3   Balanced (0.1 s)"},
+                                                            {Rate::kRelaxed, "4   Relaxed (0.25 s)"},
+                                                            {Rate::kSlow, "5   Slow (0.5 s)"}}};
+    for (const auto& [kind, title] : rates) {
+        const bool on = rate.kind == kind;
+        lines.push_back({mark(on) + title, on ? Kind::kOn : Kind::kOff});
+    }
+    const bool custom = rate.kind == Rate::kCustom;
+    lines.push_back({mark(custom) + "6   " + std::to_string(custom_ms) + " ms (Up / Down: +/-10)",
+                     custom ? Kind::kOn : Kind::kOff});
+    lines.push_back({"Outline (Tab / Shift+Tab)", Kind::kHeader});
+    for (std::size_t i = 0; i < paths.size(); ++i) {
+        const bool on = i == path_index;
+        char size[32];
+        std::snprintf(size, sizeof size, " %gx%g", static_cast<double>(paths[i].width),
+                      static_cast<double>(paths[i].height));
+        lines.push_back({mark(on) + paths[i].title + size, on ? Kind::kOn : Kind::kOff});
+    }
+    lines.push_back({"Switches", Kind::kHeader});
+    lines.push_back({mark(animate) + "A   Animate", animate ? Kind::kOn : Kind::kOff});
+    lines.push_back({mark(pause_move) + "P   Pause move", pause_move ? Kind::kOn : Kind::kOff});
+    lines.push_back({"Esc quits", Kind::kNote});
+    return lines;
+}
+
+/* The right list: the shaders with their keys, numbered in the order they run. */
+std::vector<demo::HelpPanel::Line> shader_lines(const std::array<ShaderOption, 14>& shaders,
+                                                const std::vector<std::size_t>& chain)
+{
+    using Kind = demo::HelpPanel::Kind;
+    std::vector<demo::HelpPanel::Line> lines{{"Shaders (run in order)", Kind::kHeader}};
+    for (std::size_t i = 0; i < shaders.size(); ++i) {
+        const auto at = std::find(chain.begin(), chain.end(), i);
+        const bool on = at != chain.end();
+        const std::string mark = on ? "[" + std::to_string(at - chain.begin() + 1) + "]  " : "[  ]  ";
+        lines.push_back({mark + SDL_GetKeyName(shaders[i].key) + "   " + shaders[i].title,
+                         on ? Kind::kOn : Kind::kOff});
+    }
+    lines.push_back({"Backspace: all off", Kind::kNote});
+    return lines;
+}
+
 /* Where the lens centre may go: the whole lens inside the window, 6 points of margin at the bottom. The lens keeps
  * its place as a ratio of these bounds, so it stays put relative to the window when the window is resized. */
 SDL_FRect movement_bounds(float width, float height, const somelens::LensSettings& lens)
@@ -117,7 +202,7 @@ const char* rate_title(const somelens::SnapshotRefreshRate& rate, char* buffer, 
 
 /* Until the controls row exists: keys 0-6 pick the rate (Never, Automatic, Fast, Balanced, Relaxed, Slow, custom),
  * Up and Down change the custom milliseconds by 10, P switches Pause move; Tab and Shift+Tab pick the outline,
- * A switches Animate. */
+ * A switches Animate; Q W E R T Y U I O Z X C V B switch the 14 shaders, Backspace switches them all off. */
 bool handle_key(SDL_Keycode key, somelens::SnapshotRefreshRate& rate, int& custom_ms, bool& pause_move)
 {
     using Kind = somelens::SnapshotRefreshRate::Kind;
@@ -176,8 +261,9 @@ int main(int /*argc*/, char** /*argv*/)
     SDL_Log("renderer: %s, GPU driver: %s", SDL_GetRendererName(renderer),
             SDL_GetGPUDeviceDriver(SDL_GetGPURendererDevice(renderer)));
 
+    demo::HelpPanel help;
     demo::DemoBackground background;
-    if (!background.open(renderer)) {
+    if (!background.open(renderer) || !help.open(renderer)) {
         std::fprintf(stderr, "fonts failed: %s\n", SDL_GetError());
         return EXIT_FAILURE;
     }
@@ -188,6 +274,8 @@ int main(int /*argc*/, char** /*argv*/)
     const std::array<PathOption, 8> paths = path_options();
     std::size_t path_index = 0;
     bool animate = true;
+    const std::array<ShaderOption, 14> shaders = shader_options();
+    std::vector<std::size_t> chain{0};  // indices into `shaders`, in order; Refraction at the start
     somelens::LensSettings lens_settings = somelens::LensSettings::circle(160.0f);
     SDL_FPoint lens_ratio{0.5f, 0.5f};
     bool dragging = false;
@@ -206,6 +294,10 @@ int main(int /*argc*/, char** /*argv*/)
         lens_settings.height = paths[path_index].height;
         lens_settings.path = paths[path_index].path;
         lens_settings.animates_path_changes = animate;
+        lens_settings.shaders.clear();
+        for (const std::size_t i : chain) {
+            lens_settings.shaders.push_back(shaders[i].shader);
+        }
         int window_w = 0;
         int window_h = 0;
         SDL_GetWindowSize(window, &window_w, &window_h);
@@ -216,6 +308,24 @@ int main(int /*argc*/, char** /*argv*/)
             if (event.type == SDL_EVENT_QUIT
                 || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)) {
                 running = false;
+            } else if (event.type == SDL_EVENT_KEY_DOWN
+                       && std::any_of(shaders.begin(), shaders.end(),
+                                      [&](const ShaderOption& o) { return o.key == event.key.key; })) {
+                for (std::size_t i = 0; i < shaders.size(); ++i) {
+                    if (shaders[i].key != event.key.key) {
+                        continue;
+                    }
+                    const auto at = std::find(chain.begin(), chain.end(), i);
+                    if (at != chain.end()) {
+                        chain.erase(at);
+                    } else {
+                        chain.push_back(i);
+                    }
+                }
+                title_at = 0;
+            } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_BACKSPACE) {
+                chain.clear();
+                title_at = 0;
             } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_A) {
                 animate = !animate;
                 title_at = 0;
@@ -249,6 +359,9 @@ int main(int /*argc*/, char** /*argv*/)
         container.set_paused(dragging && pause_move);
         container.begin_content();
         background.draw(static_cast<float>(window_w), static_cast<float>(window_h));
+        help.draw(12.0f, 12.0f, 240.0f,
+                  settings_lines(rate, custom_ms, paths, path_index, animate, pause_move));
+        help.draw(static_cast<float>(window_w) - 212.0f, 12.0f, 200.0f, shader_lines(shaders, chain));
         container.end_content();
         lens.draw(container, lens_centre, lens_settings);
         // SOMELENS_DEMO_SNAPSHOT=/path.png saves one frame a second after start, to look at without a screen.
@@ -265,17 +378,26 @@ int main(int /*argc*/, char** /*argv*/)
         frame_ms = frame_ms * 0.95 + static_cast<double>(now - last) / 1e6 * 0.05;
         last = now;
         if (now - title_at > 500'000'000) {
+            std::string names;
+            for (const std::size_t i : chain) {
+                names += names.empty() ? "" : " > ";
+                names += shaders[i].title;
+            }
+            if (names.empty()) {
+                names = "no shaders";
+            }
             char custom[32];
-            char title[160];
-            std::snprintf(title, sizeof title, "SomeLens SDL - %s - Animate %s - %s - Pause move %s - %.1f ms a frame",
-                          paths[path_index].title, animate ? "on" : "off", rate_title(rate, custom, sizeof custom),
-                          pause_move ? "on" : "off", frame_ms);
+            char title[320];
+            std::snprintf(title, sizeof title, "SomeLens SDL - %s - %s - Animate %s - %s - Pause move %s - %.1f ms",
+                          names.c_str(), paths[path_index].title, animate ? "on" : "off",
+                          rate_title(rate, custom, sizeof custom), pause_move ? "on" : "off", frame_ms);
             SDL_SetWindowTitle(window, title);
             title_at = now;
         }
     }
     lens.release();
     container.close();
+    help.close();
     background.close();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

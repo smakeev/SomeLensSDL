@@ -13,6 +13,7 @@ add_library(somelens STATIC
     src/glass_lens.cpp
     src/lens_container.cpp
     src/lens_morph.cpp
+    src/lens_shaders.cpp
     src/lens_settings.cpp
     src/shader_program.cpp
 )
@@ -26,6 +27,7 @@ target_link_libraries(somelens PUBLIC SDL3::SDL3)
 add_executable(somelens_demo
     demo/main.cpp
     demo/demo_background.cpp
+    demo/help_panel.cpp
 )
 target_include_directories(somelens_demo PRIVATE src)
 target_link_libraries(somelens_demo PRIVATE somelens SDL3_ttf::SDL3_ttf)

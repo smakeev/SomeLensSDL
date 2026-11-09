@@ -1,31 +1,16 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 // Lens refraction: magnifies the middle, bends the content towards the rim and mirrors a narrow edge.
-// Line for line the reference lensRefraction; positions in lens pixels, the layer sampled transparent outside.
-layout(location = 0) in vec4 v_color;
-layout(location = 1) in vec2 v_uv;
-layout(location = 0) out vec4 o_color;
-layout(set = 2, binding = 0) uniform sampler2D u_texture;
-layout(set = 3, binding = 0) uniform Uniforms {
-    vec4 size_center;  // lens size (x, y), centre (z, w), in pixels
-    vec4 params;       // radius, refraction, edge reflection
-};
-
-vec4 layer_sample(vec2 p)
-{
-    vec2 size = size_center.xy;
-    if (p.x < 0.0 || p.y < 0.0 || p.x >= size.x || p.y >= size.y) {
-        return vec4(0.0);
-    }
-    return texture(u_texture, p / size);
-}
+// Positions in lens points, as the reference; the layer is transparent past its margin around the lens.
+#include "lens_common.glsl"
 
 void main()
 {
-    vec2 position = v_uv * size_center.xy;
-    vec2 center = size_center.zw;
-    float radius = params.x;
-    float refract = params.y;
-    float edge = params.z;
+    vec2 position = lens_position();
+    vec2 center = lens.zw;
+    float radius = p0.x;
+    float refract = p0.y;
+    float edge = p0.z;
 
     vec2 toCenter = position - center;
     float dist = length(toCenter);
