@@ -126,13 +126,17 @@ ShaderBinary shader_binary(const LensShader& shader)
     return kBinaries[shader.index()];
 }
 
-float shader_sample_offset(const LensShader& shader, float radius)
+float shader_sample_offset(const LensShader& shader, float radius, float shorter)
 {
+    // Nothing that turns or scales about the centre reaches farther than the radius, which is past the lens's
+    // shorter side by radius - shorter / 2.
+    const float past_side = std::max(radius - shorter / 2.0f, 0.0f) + 2.0f;
     return std::visit(
         [&](const auto& s) -> float {
             using Shader = std::decay_t<decltype(s)>;
             if constexpr (std::is_same_v<Shader, RefractionShader>) {
-                return radius * 1.15f * s.refraction + 10.0f;
+                // It pulls the content inwards; only the mirrored rim samples outwards, by 2 % of the radius.
+                return std::fabs(s.refraction) * radius * 0.02f + 2.0f;
             } else if constexpr (std::is_same_v<Shader, ChromaticAberrationShader>) {
                 return std::max(s.amount, 0.0f) + 2.0f;
             } else if constexpr (std::is_same_v<Shader, FrostedBlurShader>) {
@@ -140,7 +144,7 @@ float shader_sample_offset(const LensShader& shader, float radius)
             } else if constexpr (std::is_same_v<Shader, RippleShader>) {
                 return std::fabs(s.amplitude) + 2.0f;
             } else if constexpr (std::is_same_v<Shader, TwirlShader>) {
-                return radius * std::min(std::fabs(s.angle), 3.14159265f) * 0.35f + 2.0f;
+                return std::min(radius * std::min(std::fabs(s.angle), 3.14159265f) * 0.35f + 2.0f, past_side);
             } else if constexpr (std::is_same_v<Shader, PrismShader>) {
                 return std::max(s.amount, 0.0f) + 2.0f;
             } else {

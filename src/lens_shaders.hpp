@@ -30,8 +30,11 @@ struct ShaderUniforms {
 [[nodiscard]] ShaderUniforms shader_uniforms(const LensShader& shader, float width, float height, float radius,
                                              float margin, SDL_FPoint layer, SDL_FPoint atlas);
 
-/** @brief How far past a point the step samples, in points: the reference's maxSampleOffset. */
-[[nodiscard]] float shader_sample_offset(const LensShader& shader, float radius);
+/**
+ * @brief How far past the lens the step samples, in points, for a lens of shader radius `radius` and shorter side
+ * `shorter`: what its formula can actually reach, so the margin taken around the crop stays small.
+ */
+[[nodiscard]] float shader_sample_offset(const LensShader& shader, float radius, float shorter);
 
 /** @brief The step's kind and values, to tell whether a chain changed. */
 [[nodiscard]] std::vector<float> shader_signature(const LensShader& shader);

@@ -337,7 +337,7 @@ void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSe
     // (the reference's maxSampleOffset), so a shifted sample near the edge reads the content, not emptiness.
     float margin_points = 0.0f;
     for (const LensShader& shader : settings.shaders) {
-        margin_points = std::max(margin_points, shader_sample_offset(shader, radius));
+        margin_points = std::max(margin_points, shader_sample_offset(shader, radius, std::min(lens_w, lens_h)));
     }
     const int margin = static_cast<int>(std::ceil(margin_points * scale));
     const int tex_w = std::max(1, static_cast<int>(std::lround(lens_w * scale))) + 2 * margin;
@@ -353,10 +353,16 @@ void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSe
 
     SDL_Texture* const previous_target = SDL_GetRenderTarget(renderer);
 
-    // 1. The part of the snapshot under the lens, over the colour of what is not covered.
+    // 1. The part of the snapshot under the lens and its margin. Where the lens itself reaches past the snapshot it
+    // shows the colour of what is not covered; the margin past the snapshot stays empty, as a layer's outside is.
     SDL_SetRenderTarget(renderer, r_->ping);
-    SDL_SetRenderDrawColor(renderer, kUncovered.r, kUncovered.g, kUncovered.b, kUncovered.a);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
     SDL_RenderClear(renderer);
+    const SDL_FRect lens_area{static_cast<float>(margin), static_cast<float>(margin),
+                              static_cast<float>(tex_w - 2 * margin), static_cast<float>(tex_h - 2 * margin)};
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    SDL_SetRenderDrawColor(renderer, kUncovered.r, kUncovered.g, kUncovered.b, kUncovered.a);
+    SDL_RenderFillRect(renderer, &lens_area);
     float snap_w = 0.0f;
     float snap_h = 0.0f;
     SDL_GetTextureSize(snapshot, &snap_w, &snap_h);
