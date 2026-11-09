@@ -151,10 +151,10 @@ float shader_sample_offset(const LensShader& shader, float radius)
 }
 
 ShaderUniforms shader_uniforms(const LensShader& shader, float width, float height, float radius, float margin,
-                               SDL_FPoint layer)
+                               SDL_FPoint layer, SDL_FPoint atlas)
 {
     ShaderUniforms u{{width, height, width / 2.0f, height / 2.0f}, {margin, margin, layer.x, layer.y},
-                     {radius, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}};
+                     {atlas.x, atlas.y, 0.0f, 0.0f}, {radius, 0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f, 0.0f}};
     std::visit(
         [&](const auto& s) {
             using Shader = std::decay_t<decltype(s)>;

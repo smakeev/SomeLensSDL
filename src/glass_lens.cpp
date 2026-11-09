@@ -245,6 +245,10 @@ struct GlassLens::Resources {
         height = 0;
     }
 
+    /**
+     * @brief Makes the two textures at least `w` by `h`. They only grow, in steps of 64 pixels, so a lens changing
+     * size (a morph, a longer chain) draws into part of them instead of making new ones every frame.
+     */
     bool ensure_textures(SDL_Renderer* to, int w, int h)
     {
         if (renderer != to) {
@@ -253,19 +257,22 @@ struct GlassLens::Resources {
             program_kinds.clear();
             renderer = to;
         }
-        if (ping != nullptr && w == width && h == height) {
+        if (ping != nullptr && w <= width && h <= height) {
             return true;
         }
+        auto grown = [](int need, int have) { return (std::max(need, have) + 63) / 64 * 64; };
+        const int new_w = grown(w, width);
+        const int new_h = grown(h, height);
         release_textures();
         for (SDL_Texture** texture : {&ping, &pong}) {
-            *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, w, h);
+            *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, new_w, new_h);
             if (*texture == nullptr) {
                 return false;
             }
             SDL_SetTextureBlendMode(*texture, SDL_BLENDMODE_NONE);
         }
-        width = w;
-        height = h;
+        width = new_w;
+        height = new_h;
         return true;
     }
 
@@ -356,19 +363,21 @@ void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSe
     // 2. The shader chain: each step reads what the one before wrote. Its values are in points, as the reference's.
     const float margin_pt = static_cast<float>(margin) / scale;
     const SDL_FPoint frame{static_cast<float>(tex_w) / scale, static_cast<float>(tex_h) / scale};
+    const SDL_FPoint atlas{static_cast<float>(r_->width) / scale, static_cast<float>(r_->height) / scale};
+    const SDL_FRect used{0.0f, 0.0f, static_cast<float>(tex_w), static_cast<float>(tex_h)};
     for (std::size_t i = 0; i < settings.shaders.size(); ++i) {
         const LensShader& shader = settings.shaders[i];
         ShaderProgram* program = r_->program(i, shader.index(), shader_binary(shader));
         if (program == nullptr) {
             continue;
         }
-        const ShaderUniforms uniforms = shader_uniforms(shader, lens_w, lens_h, radius, margin_pt, frame);
+        const ShaderUniforms uniforms = shader_uniforms(shader, lens_w, lens_h, radius, margin_pt, frame, atlas);
         program->set_uniforms(&uniforms, sizeof uniforms);
         SDL_SetRenderTarget(renderer, r_->pong);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
         SDL_RenderClear(renderer);
         SDL_SetGPURenderState(renderer, program->state());
-        SDL_RenderTexture(renderer, r_->ping, nullptr, nullptr);
+        SDL_RenderTexture(renderer, r_->ping, &used, &used);
         SDL_SetGPURenderState(renderer, nullptr);
         std::swap(r_->ping, r_->pong);
     }
@@ -384,7 +393,7 @@ void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSe
         p = SDL_FPoint{p.x * scale, p.y * scale};
     }
     const std::vector<SDL_FPoint> normals = outward_normals(outline);
-    const SDL_FRect uv_rect{crop_x, crop_y, static_cast<float>(tex_w), static_cast<float>(tex_h)};
+    const SDL_FRect uv_rect{crop_x, crop_y, static_cast<float>(r_->width), static_cast<float>(r_->height)};
     Mesh mesh(outline, normals);
     mesh.fill(0.5f, uv_rect);
     mesh.band(-0.5f, 0.5f, 1.0f, 0.0f, &uv_rect);

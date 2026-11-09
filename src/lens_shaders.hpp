@@ -9,11 +9,13 @@ namespace somelens {
 
 /**
  * @brief What every lens shader takes (shaders/lens_common.glsl), in points: lens size and centre, the margin of the
- * layer around the lens and the layer's size, then its values.
+ * layer around the lens and the layer's size, the size of the texture the layer is the top left part of, then its
+ * values.
  */
 struct ShaderUniforms {
     float lens[4];
     float frame[4];
+    float atlas[4];
     float p0[4];
     float p1[4];
 };
@@ -23,10 +25,10 @@ struct ShaderUniforms {
 
 /**
  * @brief The step's uniforms for a lens of `width` by `height` points and shader radius `radius` points, on a layer
- * of `layer` points with `margin` points around the lens.
+ * of `layer` points with `margin` points around the lens, the top left part of a texture of `atlas` points.
  */
 [[nodiscard]] ShaderUniforms shader_uniforms(const LensShader& shader, float width, float height, float radius,
-                                             float margin, SDL_FPoint layer);
+                                             float margin, SDL_FPoint layer, SDL_FPoint atlas);
 
 /** @brief How far past a point the step samples, in points: the reference's maxSampleOffset. */
 [[nodiscard]] float shader_sample_offset(const LensShader& shader, float radius);
