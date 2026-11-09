@@ -15,8 +15,40 @@ namespace somelens {
  */
 using LensPath = std::function<std::vector<SDL_FPoint>(const SDL_FRect& rect)>;
 
+/**
+ * @brief Builds an outline from lines and curves, flattened into points: what a LensPath returns.
+ *
+ *     PathBuilder path;
+ *     path.move_to({x, y});
+ *     path.cubic_to(control1, control2, {x2, y2});
+ *     return path.points();
+ */
+class PathBuilder {
+public:
+    void move_to(SDL_FPoint p);
+    void line_to(SDL_FPoint p);
+    void cubic_to(SDL_FPoint control1, SDL_FPoint control2, SDL_FPoint p);
+    /** @brief A circular arc around `centre` from `start` to `end` radians, clockwise on screen when end > start. */
+    void arc(SDL_FPoint centre, float radius, float start, float end);
+    void add_ellipse(const SDL_FRect& rect);
+    void add_rectangle(const SDL_FRect& rect);
+    /** @brief A rectangle with circular corners of `radius`, clamped to half the shorter side. */
+    void add_rounded_rectangle(const SDL_FRect& rect, float radius);
+
+    /** @brief The outline, closed implicitly, without a repeated last point. */
+    [[nodiscard]] std::vector<SDL_FPoint> points() const;
+
+private:
+    void add(SDL_FPoint p);
+    std::vector<SDL_FPoint> points_;
+};
+
 /** @brief An ellipse filling the rectangle: a circle when it is square. */
 [[nodiscard]] LensPath ellipse_path();
+/** @brief The rectangle itself. */
+[[nodiscard]] LensPath rectangle_path();
+/** @brief The rectangle with circular corners, their radius `fraction` of its shorter side. */
+[[nodiscard]] LensPath rounded_rectangle_path(float fraction);
 
 struct RefractionShader {
     float refraction = 1.2f;

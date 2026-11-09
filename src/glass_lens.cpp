@@ -56,6 +56,71 @@ std::vector<SDL_FPoint> outward_normals(const std::vector<SDL_FPoint>& points)
     return normals;
 }
 
+float cross(SDL_FPoint a, SDL_FPoint b, SDL_FPoint c)
+{
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+/** @brief Triangles covering a simple polygon, by clipping ears: indices into `polygon`, three per triangle. */
+std::vector<int> triangulate(const std::vector<SDL_FPoint>& polygon)
+{
+    std::vector<int> result;
+    std::vector<int> left(polygon.size());
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        left[i] = static_cast<int>(i);
+    }
+    double area = 0.0;
+    for (std::size_t i = 0; i < polygon.size(); ++i) {
+        const SDL_FPoint& a = polygon[i];
+        const SDL_FPoint& b = polygon[(i + 1) % polygon.size()];
+        area += static_cast<double>(a.x) * b.y - static_cast<double>(b.x) * a.y;
+    }
+    const float turn = area > 0.0 ? 1.0f : -1.0f;
+    std::size_t misses = 0;
+    std::size_t i = 0;
+    while (left.size() > 3) {
+        const std::size_t m = left.size();
+        const int ia = left[(i + m - 1) % m];
+        const int ib = left[i % m];
+        const int ic = left[(i + 1) % m];
+        const SDL_FPoint& a = polygon[static_cast<std::size_t>(ia)];
+        const SDL_FPoint& b = polygon[static_cast<std::size_t>(ib)];
+        const SDL_FPoint& c = polygon[static_cast<std::size_t>(ic)];
+        const float corner = cross(a, b, c) * turn;
+        bool ear = corner > 0.0f;
+        for (std::size_t k = 0; ear && k < m; ++k) {
+            const int ip = left[k];
+            if (ip == ia || ip == ib || ip == ic) {
+                continue;
+            }
+            const SDL_FPoint& p = polygon[static_cast<std::size_t>(ip)];
+            if (cross(a, b, p) * turn >= 0.0f && cross(b, c, p) * turn >= 0.0f && cross(c, a, p) * turn >= 0.0f) {
+                ear = false;
+            }
+        }
+        // A straight or degenerate corner adds nothing: dropped. A polygon with no ear left (self-touching) is
+        // finished as a fan, so something is always drawn.
+        if (ear || corner == 0.0f || misses > m) {
+            if (corner != 0.0f) {
+                result.insert(result.end(), {ia, ib, ic});
+            }
+            left.erase(left.begin() + static_cast<std::ptrdiff_t>(i % m));
+            misses = 0;
+            i = i % m;
+            if (i >= left.size()) {
+                i = 0;
+            }
+            continue;
+        }
+        ++misses;
+        i = (i + 1) % m;
+    }
+    if (left.size() == 3) {
+        result.insert(result.end(), {left[0], left[1], left[2]});
+    }
+    return result;
+}
+
 /** @brief Builds a lens's triangles: the fill (textured) and the ring, around one outline in window pixels. */
 class Mesh {
 public:
@@ -98,19 +163,19 @@ public:
         band(outer - half, outer + half, alpha, 0.0f, nullptr);
     }
 
-    /** @brief The inside of the outline, shrunk by `inset`, as a fan from `centre`. */
-    void fan(SDL_FPoint centre, float inset, const SDL_FRect& uv_rect)
+    /** @brief The inside of the outline, shrunk by `inset`; any simple outline, convex or not. */
+    void fill(float inset, const SDL_FRect& uv_rect)
     {
         const std::size_t n = points_.size();
         const auto base = static_cast<int>(vertices_.size());
-        vertices_.push_back(SDL_Vertex{centre, SDL_FColor{1.0f, 1.0f, 1.0f, 1.0f}, uv(centre, &uv_rect)});
+        std::vector<SDL_FPoint> shrunk;
+        shrunk.reserve(n);
         for (std::size_t i = 0; i < n; ++i) {
             vertices_.push_back(vertex(i, -inset, 1.0f, &uv_rect));
+            shrunk.push_back(vertices_.back().position);
         }
-        for (std::size_t i = 0; i < n; ++i) {
-            indices_.push_back(base);
-            indices_.push_back(base + 1 + static_cast<int>(i));
-            indices_.push_back(base + 1 + static_cast<int>((i + 1) % n));
+        for (const int index : triangulate(shrunk)) {
+            indices_.push_back(base + index);
         }
     }
 
@@ -315,9 +380,8 @@ void GlassLens::draw(LensContainer& container, SDL_FPoint centre, const LensSett
     }
     const std::vector<SDL_FPoint> normals = outward_normals(outline);
     const SDL_FRect uv_rect{origin_x, origin_y, size_x, size_y};
-    const SDL_FPoint middle{origin_x + size_x / 2.0f, origin_y + size_y / 2.0f};
     Mesh mesh(outline, normals);
-    mesh.fan(middle, 0.5f, uv_rect);
+    mesh.fill(0.5f, uv_rect);
     mesh.band(-0.5f, 0.5f, 1.0f, 0.0f, &uv_rect);
     SDL_SetTextureBlendMode(r_->ping, SDL_BLENDMODE_BLEND);
     mesh.draw(renderer, r_->ping);

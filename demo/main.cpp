@@ -8,10 +8,65 @@
 #include <SDL3_ttf/SDL_ttf.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 
 namespace {
+
+struct PathOption {
+    const char* title;
+    float width;
+    float height;
+    somelens::LensPath path;
+};
+
+/* The reference demo's outlines: Bezier curves of a blob for the custom one. */
+somelens::LensPath custom_path()
+{
+    return [](const SDL_FRect& rect) {
+        const float x = rect.x;
+        const float y = rect.y;
+        const float w = rect.w;
+        const float h = rect.h;
+        auto at = [&](float u, float v) { return SDL_FPoint{x + w * u, y + h * v}; };
+        somelens::PathBuilder path;
+        path.move_to(at(0.50f, 0.02f));
+        path.cubic_to(at(0.72f, -0.06f), at(0.92f, 0.06f), at(0.93f, 0.25f));
+        path.cubic_to(at(1.05f, 0.42f), at(0.94f, 0.61f), at(0.82f, 0.72f));
+        path.cubic_to(at(0.70f, 0.87f), at(0.62f, 1.00f), at(0.48f, 0.96f));
+        path.cubic_to(at(0.33f, 0.91f), at(0.18f, 0.95f), at(0.13f, 0.77f));
+        path.cubic_to(at(-0.03f, 0.61f), at(0.02f, 0.39f), at(0.11f, 0.28f));
+        path.cubic_to(at(0.19f, 0.10f), at(0.33f, 0.14f), at(0.50f, 0.02f));
+        return path.points();
+    };
+}
+
+somelens::LensPath diamond_path()
+{
+    return [](const SDL_FRect& rect) {
+        somelens::PathBuilder path;
+        path.move_to(SDL_FPoint{rect.x + rect.w / 2.0f, rect.y});
+        path.line_to(SDL_FPoint{rect.x + rect.w, rect.y + rect.h / 2.0f});
+        path.line_to(SDL_FPoint{rect.x + rect.w / 2.0f, rect.y + rect.h});
+        path.line_to(SDL_FPoint{rect.x, rect.y + rect.h / 2.0f});
+        return path.points();
+    };
+}
+
+std::array<PathOption, 8> path_options()
+{
+    return {
+        PathOption{"Circle", 160.0f, 160.0f, somelens::ellipse_path()},
+        PathOption{"Ellipse", 190.0f, 130.0f, somelens::ellipse_path()},
+        PathOption{"Square", 150.0f, 150.0f, somelens::rectangle_path()},
+        PathOption{"Rectangle", 200.0f, 130.0f, somelens::rectangle_path()},
+        PathOption{"Rounded", 180.0f, 140.0f, somelens::rounded_rectangle_path(0.24f)},
+        PathOption{"Capsule", 210.0f, 110.0f, somelens::rounded_rectangle_path(0.5f)},
+        PathOption{"Diamond", 160.0f, 160.0f, diamond_path()},
+        PathOption{"Custom(Path)", 190.0f, 170.0f, custom_path()},
+    };
+}
 
 /* Where the lens centre may go: the whole lens inside the window, 6 points of margin at the bottom. The lens keeps
  * its place as a ratio of these bounds, so it stays put relative to the window when the window is resized. */
@@ -61,7 +116,7 @@ const char* rate_title(const somelens::SnapshotRefreshRate& rate, char* buffer, 
 }
 
 /* Until the controls row exists: keys 0-6 pick the rate (Never, Automatic, Fast, Balanced, Relaxed, Slow, custom),
- * Up and Down change the custom milliseconds by 10, P switches Pause move. */
+ * Up and Down change the custom milliseconds by 10, P switches Pause move; Tab and Shift+Tab pick the outline. */
 bool handle_key(SDL_Keycode key, somelens::SnapshotRefreshRate& rate, int& custom_ms, bool& pause_move)
 {
     using Kind = somelens::SnapshotRefreshRate::Kind;
@@ -129,7 +184,9 @@ int main(int /*argc*/, char** /*argv*/)
     somelens::LensContainer container;
     container.open(renderer);
     somelens::GlassLens lens;
-    const somelens::LensSettings lens_settings = somelens::LensSettings::circle(160.0f);
+    const std::array<PathOption, 8> paths = path_options();
+    std::size_t path_index = 0;
+    somelens::LensSettings lens_settings = somelens::LensSettings::circle(160.0f);
     SDL_FPoint lens_ratio{0.5f, 0.5f};
     bool dragging = false;
     somelens::SnapshotRefreshRate rate{};
@@ -143,6 +200,9 @@ int main(int /*argc*/, char** /*argv*/)
     bool running = true;
     while (running) {
         SDL_Event event;
+        lens_settings.width = paths[path_index].width;
+        lens_settings.height = paths[path_index].height;
+        lens_settings.path = paths[path_index].path;
         int window_w = 0;
         int window_h = 0;
         SDL_GetWindowSize(window, &window_w, &window_h);
@@ -153,6 +213,10 @@ int main(int /*argc*/, char** /*argv*/)
             if (event.type == SDL_EVENT_QUIT
                 || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)) {
                 running = false;
+            } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_TAB) {
+                const bool back = (event.key.mod & SDL_KMOD_SHIFT) != 0;
+                path_index = (path_index + (back ? paths.size() - 1 : 1)) % paths.size();
+                title_at = 0;
             } else if (event.type == SDL_EVENT_KEY_DOWN) {
                 if (handle_key(event.key.key, rate, custom_ms, pause_move)) {
                     title_at = 0;
@@ -197,8 +261,9 @@ int main(int /*argc*/, char** /*argv*/)
         if (now - title_at > 500'000'000) {
             char custom[32];
             char title[160];
-            std::snprintf(title, sizeof title, "SomeLens SDL - %s - Pause move %s - %.1f ms a frame",
-                          rate_title(rate, custom, sizeof custom), pause_move ? "on" : "off", frame_ms);
+            std::snprintf(title, sizeof title, "SomeLens SDL - %s - %s - Pause move %s - %.1f ms a frame",
+                          paths[path_index].title, rate_title(rate, custom, sizeof custom),
+                          pause_move ? "on" : "off", frame_ms);
             SDL_SetWindowTitle(window, title);
             title_at = now;
         }
