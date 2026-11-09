@@ -76,11 +76,13 @@ void LensContainer::begin_content()
     SDL_SetRenderScale(renderer_, scale_, scale_);
 }
 
-void LensContainer::end_content()
+void LensContainer::end_content(bool present)
 {
     SDL_SetRenderScale(renderer_, 1.0f, 1.0f);
     SDL_SetRenderTarget(renderer_, nullptr);
-    SDL_RenderTexture(renderer_, content_, nullptr, nullptr);
+    if (present) {
+        SDL_RenderTexture(renderer_, content_, nullptr, nullptr);
+    }
 
     // A snapshot is due at the rate, or when asked for (rate changed, resumed); either way never closer to the last
     // one than the rate's interval or one and a half times what the last capture took. With kNever only asked ones.

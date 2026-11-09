@@ -26,9 +26,9 @@ public:
     /**
      * @brief Draws the lens centred at `centre` (points, in the container) over what is on screen. When the settings
      * change and ask for it (animates_path_changes), the lens springs to them over about half a second; keep drawing
-     * every frame meanwhile.
+     * every frame meanwhile. `opacity` fades the whole lens, glass and ring, e.g. for one leaving its area.
      */
-    void draw(LensContainer& container, SDL_FPoint centre, const LensSettings& settings);
+    void draw(LensContainer& container, SDL_FPoint centre, const LensSettings& settings, float opacity = 1.0f);
 
     /** @brief Whether a point (points, in the container) lies inside the lens's outline, for picking it up. */
     [[nodiscard]] bool contains(SDL_FPoint centre, const LensSettings& settings, SDL_FPoint point) const;
@@ -36,7 +36,7 @@ public:
     void release();
 
 private:
-    void render(LensContainer& container, SDL_FPoint centre, const LensSettings& settings);
+    void render(LensContainer& container, SDL_FPoint centre, const LensSettings& settings, float opacity);
 
     struct Resources;
     std::unique_ptr<Resources> r_;

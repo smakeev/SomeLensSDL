@@ -35,8 +35,11 @@ public:
 
     /** @brief Starts the frame's content: the render target becomes the container, the window's size, in points. */
     void begin_content();
-    /** @brief Ends it: draws the content to the window and takes the snapshot when due. */
-    void end_content();
+    /**
+     * @brief Ends it: draws the content to the window (unless `present` is false, for a caller that shows the content
+     * itself) and takes the snapshot when due.
+     */
+    void end_content(bool present = true);
 
     [[nodiscard]] SDL_Renderer* renderer() const noexcept { return renderer_; }
     /** @brief The latest snapshot, or null before the first one. */

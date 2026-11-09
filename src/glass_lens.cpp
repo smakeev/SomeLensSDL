@@ -119,8 +119,8 @@ std::vector<int> triangulate(const std::vector<SDL_FPoint>& polygon)
 /** @brief Builds a lens's triangles: the fill (textured) and the ring, around one outline in window pixels. */
 class Mesh {
 public:
-    Mesh(const std::vector<SDL_FPoint>& points, const std::vector<SDL_FPoint>& normals)
-        : points_(points), normals_(normals)
+    Mesh(const std::vector<SDL_FPoint>& points, const std::vector<SDL_FPoint>& normals, float opacity)
+        : points_(points), normals_(normals), opacity_(opacity)
     {
     }
 
@@ -196,11 +196,12 @@ private:
     SDL_Vertex vertex(std::size_t i, float offset, float alpha, const SDL_FRect* uv_rect) const
     {
         const SDL_FPoint p{points_[i].x + normals_[i].x * offset, points_[i].y + normals_[i].y * offset};
-        return SDL_Vertex{p, SDL_FColor{1.0f, 1.0f, 1.0f, alpha}, uv(p, uv_rect)};
+        return SDL_Vertex{p, SDL_FColor{1.0f, 1.0f, 1.0f, alpha * opacity_}, uv(p, uv_rect)};
     }
 
     const std::vector<SDL_FPoint>& points_;
     const std::vector<SDL_FPoint>& normals_;
+    float opacity_;
     std::vector<SDL_Vertex> vertices_;
     std::vector<int> indices_;
 };
@@ -312,12 +313,15 @@ bool GlassLens::contains(SDL_FPoint centre, const LensSettings& settings, SDL_FP
     return inside(settings.path(rect), point);
 }
 
-void GlassLens::draw(LensContainer& container, SDL_FPoint centre, const LensSettings& settings)
+void GlassLens::draw(LensContainer& container, SDL_FPoint centre, const LensSettings& settings, float opacity)
 {
-    render(container, centre, r_->morph.shown(settings, SDL_GetTicksNS()));
+    const LensSettings shown = r_->morph.shown(settings, SDL_GetTicksNS());
+    if (opacity > 0.0f) {
+        render(container, centre, shown, std::min(opacity, 1.0f));
+    }
 }
 
-void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSettings& settings)
+void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSettings& settings, float opacity)
 {
     SDL_Renderer* renderer = container.renderer();
     SDL_Texture* snapshot = container.snapshot();
@@ -394,7 +398,7 @@ void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSe
     }
     const std::vector<SDL_FPoint> normals = outward_normals(outline);
     const SDL_FRect uv_rect{crop_x, crop_y, static_cast<float>(r_->width), static_cast<float>(r_->height)};
-    Mesh mesh(outline, normals);
+    Mesh mesh(outline, normals, opacity);
     mesh.fill(0.5f, uv_rect);
     mesh.band(-0.5f, 0.5f, 1.0f, 0.0f, &uv_rect);
     SDL_SetTextureBlendMode(r_->ping, SDL_BLENDMODE_BLEND);
