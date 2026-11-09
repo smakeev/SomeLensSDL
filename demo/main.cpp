@@ -18,7 +18,8 @@ int main(int /*argc*/, char** /*argv*/)
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return EXIT_FAILURE;
     }
-    SDL_Window* window = SDL_CreateWindow("SomeLens SDL", 1000, 700, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    SDL_Window* window =
+        SDL_CreateWindow("SomeLens SDL", 1000, 700, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     SDL_Renderer* renderer = window != nullptr ? somelens::create_gpu_renderer(window) : nullptr;
     if (renderer == nullptr) {
         std::fprintf(stderr, "no GPU renderer: %s\n", SDL_GetError());
@@ -29,7 +30,9 @@ int main(int /*argc*/, char** /*argv*/)
             SDL_GetGPUDeviceDriver(SDL_GetGPURendererDevice(renderer)));
 
     somelens::ShaderProgram passthrough;
-    if (!passthrough.create(renderer, {passthrough_spv, sizeof passthrough_spv, passthrough_msl, sizeof passthrough_msl, 0})) {
+    const somelens::ShaderBinary binary{passthrough_spv, sizeof passthrough_spv, passthrough_msl,
+                                        sizeof passthrough_msl, 0};
+    if (!passthrough.create(renderer, binary)) {
         std::fprintf(stderr, "shader failed: %s\n", SDL_GetError());
         return EXIT_FAILURE;
     }

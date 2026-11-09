@@ -112,7 +112,8 @@ void DemoBackground::draw_text(TTF_Font* font, const char* text, SDL_Color colou
     if (shadow_radius > 0.0f) {
         SDL_SetTextureColorMod(texture, shadow.r, shadow.g, shadow.b);
         const int rings = 12;
-        SDL_SetTextureAlphaMod(texture, static_cast<Uint8>(std::min(255.0f, shadow.a / static_cast<float>(rings) * 2.2f)));
+        const float faint = std::min(255.0f, shadow.a / static_cast<float>(rings) * 2.2f);
+        SDL_SetTextureAlphaMod(texture, static_cast<Uint8>(faint));
         for (int i = 0; i < rings; ++i) {
             const float angle = static_cast<float>(i) / rings * 6.2831853f;
             const SDL_FRect blur{at.x + std::cos(angle) * shadow_radius * 0.5f,
