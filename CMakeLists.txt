@@ -10,6 +10,9 @@ find_package(SDL3_ttf CONFIG REQUIRED)
 
 # The library: glass lenses over any content drawn with SDL's GPU renderer.
 add_library(somelens STATIC
+    src/glass_lens.cpp
+    src/lens_container.cpp
+    src/lens_settings.cpp
     src/shader_program.cpp
 )
 target_include_directories(somelens
