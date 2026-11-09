@@ -1,5 +1,7 @@
 #include "somelens/glass_lens.hpp"
 
+#include "lens_morph.hpp"
+
 #include "generated/refraction.msl.h"
 #include "generated/refraction.spv.h"
 
@@ -233,6 +235,7 @@ struct GlassLens::Resources {
     int width = 0;
     int height = 0;
     std::vector<ShaderProgram> programs;
+    LensMorph morph;
 
     ~Resources() { release_textures(); }
 
@@ -303,6 +306,11 @@ bool GlassLens::contains(SDL_FPoint centre, const LensSettings& settings, SDL_FP
 }
 
 void GlassLens::draw(LensContainer& container, SDL_FPoint centre, const LensSettings& settings)
+{
+    render(container, centre, r_->morph.shown(settings, SDL_GetTicksNS()));
+}
+
+void GlassLens::render(LensContainer& container, SDL_FPoint centre, const LensSettings& settings)
 {
     SDL_Renderer* renderer = container.renderer();
     SDL_Texture* snapshot = container.snapshot();

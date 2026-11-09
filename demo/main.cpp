@@ -116,7 +116,8 @@ const char* rate_title(const somelens::SnapshotRefreshRate& rate, char* buffer, 
 }
 
 /* Until the controls row exists: keys 0-6 pick the rate (Never, Automatic, Fast, Balanced, Relaxed, Slow, custom),
- * Up and Down change the custom milliseconds by 10, P switches Pause move; Tab and Shift+Tab pick the outline. */
+ * Up and Down change the custom milliseconds by 10, P switches Pause move; Tab and Shift+Tab pick the outline,
+ * A switches Animate. */
 bool handle_key(SDL_Keycode key, somelens::SnapshotRefreshRate& rate, int& custom_ms, bool& pause_move)
 {
     using Kind = somelens::SnapshotRefreshRate::Kind;
@@ -186,6 +187,7 @@ int main(int /*argc*/, char** /*argv*/)
     somelens::GlassLens lens;
     const std::array<PathOption, 8> paths = path_options();
     std::size_t path_index = 0;
+    bool animate = true;
     somelens::LensSettings lens_settings = somelens::LensSettings::circle(160.0f);
     SDL_FPoint lens_ratio{0.5f, 0.5f};
     bool dragging = false;
@@ -203,6 +205,7 @@ int main(int /*argc*/, char** /*argv*/)
         lens_settings.width = paths[path_index].width;
         lens_settings.height = paths[path_index].height;
         lens_settings.path = paths[path_index].path;
+        lens_settings.animates_path_changes = animate;
         int window_w = 0;
         int window_h = 0;
         SDL_GetWindowSize(window, &window_w, &window_h);
@@ -213,6 +216,9 @@ int main(int /*argc*/, char** /*argv*/)
             if (event.type == SDL_EVENT_QUIT
                 || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)) {
                 running = false;
+            } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_A) {
+                animate = !animate;
+                title_at = 0;
             } else if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_TAB) {
                 const bool back = (event.key.mod & SDL_KMOD_SHIFT) != 0;
                 path_index = (path_index + (back ? paths.size() - 1 : 1)) % paths.size();
@@ -261,8 +267,8 @@ int main(int /*argc*/, char** /*argv*/)
         if (now - title_at > 500'000'000) {
             char custom[32];
             char title[160];
-            std::snprintf(title, sizeof title, "SomeLens SDL - %s - %s - Pause move %s - %.1f ms a frame",
-                          paths[path_index].title, rate_title(rate, custom, sizeof custom),
+            std::snprintf(title, sizeof title, "SomeLens SDL - %s - Animate %s - %s - Pause move %s - %.1f ms a frame",
+                          paths[path_index].title, animate ? "on" : "off", rate_title(rate, custom, sizeof custom),
                           pause_move ? "on" : "off", frame_ms);
             SDL_SetWindowTitle(window, title);
             title_at = now;

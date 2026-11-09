@@ -12,6 +12,7 @@ find_package(SDL3_ttf CONFIG REQUIRED)
 add_library(somelens STATIC
     src/glass_lens.cpp
     src/lens_container.cpp
+    src/lens_morph.cpp
     src/lens_settings.cpp
     src/shader_program.cpp
 )
